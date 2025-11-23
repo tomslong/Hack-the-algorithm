@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Home - DSA Learning Platform{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>Learn Data Structures & Algorithms</h1>
+    <p>Master DSA from Zero to Hero with interactive lessons and practice problems</p>
+</div>
+
+<section class="learning-section">
+    <h2>Data Structures</h2>
+    <div class="topic-grid">
+        {% for topic in data_structures %}
+        <a href="/learn/data_structures/{{ topic.id }}" class="topic-card">
+            <h3>{{ topic.title }}</h3>
+            <p>{{ topic.description }}</p>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="learning-section">
+    <h2>Algorithms</h2>
+    <div class="topic-grid">
+        {% for topic in algorithms %}
+        <a href="/learn/algorithms/{{ topic.id }}" class="topic-card">
+            <h3>{{ topic.title }}</h3>
+            <p>{{ topic.description }}</p>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="cta-section">
+    <h2>Ready to Practice?</h2>
+    <p>Test your knowledge with coding challenges</p>
+    <a href="/problems" class="btn btn-primary">Start Solving Problems</a>
+</section>
+{% endblock %}
