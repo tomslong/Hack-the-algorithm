@@ -146,12 +146,35 @@ Environment variables can be set in `docker-compose.yml` or directly in your env
 - `HOST`: Host address (default: 0.0.0.0)
 - `PORT`: Port number (default: 5000)
 
-## Security Features
+## Security Considerations
 
+⚠️ **Important**: This is a **starter/demo application** intended for educational purposes and local development. It is **NOT production-ready** and should **NOT** be deployed to public-facing servers without significant security hardening.
+
+### Current Security Measures
 - Code execution timeout (5 seconds default)
 - Maximum code length limit (10,000 characters)
-- Input sanitization and validation
-- Isolated code execution environment
+- Basic input validation
+
+### Known Security Limitations
+This starter application has the following security limitations that must be addressed before production use:
+
+1. **Code Execution**: Uses subprocess to execute arbitrary Python code without proper sandboxing
+2. **No User Isolation**: All code runs in the same environment without containerization per execution
+3. **XSS Vulnerabilities**: Some user inputs are not fully sanitized
+4. **No Rate Limiting**: No protection against abuse or DoS attacks
+5. **Secret Key**: Uses a default secret key (must be changed for production)
+
+### For Production Deployment
+If you plan to deploy this publicly, consider:
+- Implementing proper code sandboxing (e.g., using Docker containers per execution)
+- Adding user authentication and authorization
+- Implementing rate limiting and request throttling
+- Using a production WSGI server (e.g., Gunicorn, uWSGI)
+- Adding HTTPS/SSL encryption
+- Implementing proper input sanitization and CSP headers
+- Setting up monitoring and logging
+- Running application as non-root user in containers
+- Updating to latest secure versions of all dependencies
 
 ## Contributing
 
