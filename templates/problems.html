@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Practice Problems - DSA Learning Platform{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/">Home</a> &gt; <span>Practice Problems</span>
+</div>
+
+<h1>Practice Problems</h1>
+<p class="subtitle">Test your skills with these coding challenges</p>
+
+<div class="problems-list">
+    {% for problem in problems %}
+    <a href="/problem/{{ problem.id }}" class="problem-card">
+        <div class="problem-header">
+            <h3>{{ problem.title }}</h3>
+            <span class="difficulty difficulty-{{ problem.difficulty.lower() }}">{{ problem.difficulty }}</span>
+        </div>
+        <p>{{ problem.description[:150] }}...</p>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

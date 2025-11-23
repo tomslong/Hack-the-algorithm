@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}{{ problem.title }} - DSA Learning Platform{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="/">Home</a> &gt; 
+    <a href="/problems">Problems</a> &gt; 
+    <span>{{ problem.title }}</span>
+</div>
+
+<div class="problem-container">
+    <div class="problem-description">
+        <h1>{{ problem.title }}</h1>
+        <span class="difficulty difficulty-{{ problem.difficulty.lower() }}">{{ problem.difficulty }}</span>
+        
+        <div class="description-content">
+            {{ problem.description | replace('\n', '<br>') | safe }}
+        </div>
+    </div>
+
+    <div class="code-editor-section">
+        <div class="editor-header">
+            <h3>Code Editor</h3>
+            <div class="editor-actions">
+                <button id="runBtn" class="btn btn-secondary">Run Code</button>
+                <button id="submitBtn" class="btn btn-primary">Submit</button>
+            </div>
+        </div>
+        
+        <textarea id="codeEditor" class="code-editor">{{ problem.starter_code }}</textarea>
+        
+        <div id="output" class="output-section" style="display: none;">
+            <h3>Output</h3>
+            <div id="outputContent"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const problemId = "{{ problem.id }}";
+
+document.getElementById('runBtn').addEventListener('click', async () => {
+    const code = document.getElementById('codeEditor').value;
+    const outputSection = document.getElementById('output');
+    const outputContent = document.getElementById('outputContent');
+    
+    outputSection.style.display = 'block';
+    outputContent.innerHTML = '<p class="loading">Running code...</p>';
+    
+    try {
+        const response = await fetch('/run', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ code }),
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            let html = '<div class="result-box success">';
+            html += '<p><strong>Execution Time:</strong> ' + data.execution_time + '</p>';
+            if (data.output) {
+                html += '<p><strong>Output:</strong></p>';
+                html += '<pre>' + escapeHtml(data.output) + '</pre>';
+            }
+            if (data.error) {
+                html += '<p><strong>Errors:</strong></p>';
+                html += '<pre class="error">' + escapeHtml(data.error) + '</pre>';
+            }
+            html += '</div>';
+            outputContent.innerHTML = html;
+        } else {
+            outputContent.innerHTML = '<div class="result-box error"><p>' + data.error + '</p></div>';
+        }
+    } catch (error) {
+        outputContent.innerHTML = '<div class="result-box error"><p>Error: ' + error.message + '</p></div>';
+    }
+});
+
+document.getElementById('submitBtn').addEventListener('click', async () => {
+    const code = document.getElementById('codeEditor').value;
+    const outputSection = document.getElementById('output');
+    const outputContent = document.getElementById('outputContent');
+    
+    outputSection.style.display = 'block';
+    outputContent.innerHTML = '<p class="loading">Running test cases...</p>';
+    
+    try {
+        const response = await fetch('/submit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ code, problem_id: problemId }),
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            let html = '<div class="result-box ' + (data.all_passed ? 'success' : 'error') + '">';
+            html += '<h4>' + (data.all_passed ? '✓ All Tests Passed!' : '✗ Some Tests Failed') + '</h4>';
+            
+            data.results.forEach(result => {
+                html += '<div class="test-case ' + (result.passed ? 'passed' : 'failed') + '">';
+                html += '<p><strong>Test Case ' + result.test_case + ':</strong> ';
+                html += result.passed ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>';
+                html += ' (' + result.execution_time + ')</p>';
+                html += '<p><strong>Input:</strong> ' + escapeHtml(result.input) + '</p>';
+                html += '<p><strong>Expected:</strong> ' + escapeHtml(result.expected) + '</p>';
+                html += '<p><strong>Your Output:</strong> ' + escapeHtml(result.output) + '</p>';
+                if (result.error) {
+                    html += '<p><strong>Error:</strong> <span class="error">' + escapeHtml(result.error) + '</span></p>';
+                }
+                html += '</div>';
+            });
+            
+            html += '</div>';
+            outputContent.innerHTML = html;
+        } else {
+            outputContent.innerHTML = '<div class="result-box error"><p>' + data.error + '</p></div>';
+        }
+    } catch (error) {
+        outputContent.innerHTML = '<div class="result-box error"><p>Error: ' + error.message + '</p></div>';
+    }
+});
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
