@@ -784,8 +784,10 @@ def submit_code():
             try:
                 # Prepare test code
                 test_code = code + f"\n\n# Test case {i+1}\n"
-                test_code += f"result = str(eval('{problem['id']}' + '{test_case['input']}'))\n"
-                test_code += "print(result)"
+                test_code += f"import json\n"
+                test_code += f"args = json.loads('{test_case['input']}')\n"
+                test_code += f"result = {problem['id']}(*args)\n"
+                test_code += f"print(json.dumps(result))"
                 
                 # Execute with timeout
                 start_time = time.time()
