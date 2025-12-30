@@ -3,7 +3,13 @@ import subprocess
 import json
 import time
 import sys
+import jedi
 from io import StringIO
+from config import Config
+try:
+    from flake8.api import legacy as flake8
+except ImportError:
+    import flake8.api.legacy as flake8
 from config import Config
 
 app = Flask(__name__)
@@ -849,6 +855,80 @@ def submit_code():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/lint', methods=['POST'])
+def lint_code():
+    """Lint code using flake8"""
+    try:
+        data = request.get_json()
+        code = data.get('code', '')
+        
+        style_guide = flake8.get_style_guide(ignore=['E501'])
+        
+        # Flake8 API expects a file, so we process the string via a Report helper or temporary approach
+        # A simpler way for string content is using check_files if we write to temp, 
+        # or hooking into the reporting.
+        # However, dealing with in-memory strings is tricky with standard flake8 API.
+        # Alternatively, we can use subprocess which is safer and easier.
+        
+        # Using subprocess for flake8 on stdin
+        proc = subprocess.Popen(
+            [sys.executable, '-m', 'flake8', '-', '--format=%(row)d:%(col)d:%(code)s:%(text)s'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        stdout, stderr = proc.communicate(input=code)
+        
+        markers = []
+        for line in stdout.splitlines():
+            parts = line.split(':', 3)
+            if len(parts) >= 4:
+                row, col, code, text = parts
+                markers.append({
+                    'startLineNumber': int(row),
+                    'startColumn': int(col),
+                    'endLineNumber': int(row),
+                    'endColumn': int(col) + 1, # Heuristic
+                    'message': f"{code}: {text}",
+                    'severity': 8 # MarkerSeverity.Error = 8
+                })
+        
+        return jsonify({'markers': markers})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/complete', methods=['POST'])
+def complete_code():
+    """Provide code completions using Jedi"""
+    try:
+        data = request.get_json()
+        code = data.get('code', '')
+        line = data.get('line', 1)
+        column = data.get('column', 0)
+        
+        script = jedi.Script(code)
+        completions = script.complete(line, column)
+        
+        suggestions = []
+        for c in completions:
+            suggestions.append({
+                'label': c.name,
+                'kind': 1, # 1: Text, can refine based on c.type
+                'insertText': c.name,
+                'detail': c.description
+            })
+            
+        return jsonify({'suggestions': suggestions})
+        
+    except Exception as e:
+        # Jedi can be fragile with incomplete code, return empty on error
+        print(f"Jedi error: {e}")
+        return jsonify({'suggestions': []})
 
 
 @app.route('/run', methods=['POST'])

@@ -4,8 +4,8 @@
 
 {% block content %}
 <div class="breadcrumb">
-    <a href="/">Home</a> &gt; 
-    <a href="/problems">Problems</a> &gt; 
+    <a href="/">Home</a> &gt;
+    <a href="/problems">Problems</a> &gt;
     <span>{{ problem.title }}</span>
 </div>
 
@@ -13,7 +13,7 @@
     <div class="problem-description">
         <h1>{{ problem.title }}</h1>
         <span class="difficulty difficulty-{{ problem.difficulty.lower() }}">{{ problem.difficulty }}</span>
-        
+
         <div class="description-content">
             {{ problem.description | replace('\n', '<br>') | safe }}
         </div>
@@ -27,9 +27,9 @@
                 <button id="submitBtn" class="btn btn-primary">Submit</button>
             </div>
         </div>
-        
-        <textarea id="codeEditor" class="code-editor">{{ problem.starter_code }}</textarea>
-        
+
+        <div id="codeEditorContainer" class="code-editor" style="height: 500px; border: 1px solid #ddd;"></div>
+
         <div id="output" class="output-section" style="display: none;">
             <h3>Output</h3>
             <div id="outputContent"></div>
@@ -37,100 +37,155 @@
     </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.js"></script>
 <script>
-const problemId = "{{ problem.id }}";
+    const problemId = "{{ problem.id }}";
+    const starterCode = `{{ problem.starter_code | safe }}`;
+    let editor;
 
-document.getElementById('runBtn').addEventListener('click', async () => {
-    const code = document.getElementById('codeEditor').value;
-    const outputSection = document.getElementById('output');
-    const outputContent = document.getElementById('outputContent');
-    
-    outputSection.style.display = 'block';
-    outputContent.innerHTML = '<p class="loading">Running code...</p>';
-    
-    try {
-        const response = await fetch('/run', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ code }),
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            let html = '<div class="result-box success">';
-            html += '<p><strong>Execution Time:</strong> ' + data.execution_time + '</p>';
-            if (data.output) {
-                html += '<p><strong>Output:</strong></p>';
-                html += '<pre>' + escapeHtml(data.output) + '</pre>';
-            }
-            if (data.error) {
-                html += '<p><strong>Errors:</strong></p>';
-                html += '<pre class="error">' + escapeHtml(data.error) + '</pre>';
-            }
-            html += '</div>';
-            outputContent.innerHTML = html;
-        } else {
-            outputContent.innerHTML = '<div class="result-box error"><p>' + data.error + '</p></div>';
-        }
-    } catch (error) {
-        outputContent.innerHTML = '<div class="result-box error"><p>Error: ' + error.message + '</p></div>';
-    }
-});
+    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
 
-document.getElementById('submitBtn').addEventListener('click', async () => {
-    const code = document.getElementById('codeEditor').value;
-    const outputSection = document.getElementById('output');
-    const outputContent = document.getElementById('outputContent');
-    
-    outputSection.style.display = 'block';
-    outputContent.innerHTML = '<p class="loading">Running test cases...</p>';
-    
-    try {
-        const response = await fetch('/submit', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ code, problem_id: problemId }),
+    require(["vs/editor/editor.main"], function () {
+        // Register completion provider
+        monaco.languages.registerCompletionItemProvider('python', {
+            provideCompletionItems: async function (model, position) {
+                const code = model.getValue();
+                const response = await fetch('/api/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code: code,
+                        line: position.lineNumber,
+                        column: position.column - 1
+                    })
+                });
+                const data = await response.json();
+                return { suggestions: data.suggestions };
+            }
         });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            let html = '<div class="result-box ' + (data.all_passed ? 'success' : 'error') + '">';
-            html += '<h4>' + (data.all_passed ? '✓ All Tests Passed!' : '✗ Some Tests Failed') + '</h4>';
-            
-            data.results.forEach(result => {
-                html += '<div class="test-case ' + (result.passed ? 'passed' : 'failed') + '">';
-                html += '<p><strong>Test Case ' + result.test_case + ':</strong> ';
-                html += result.passed ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>';
-                html += ' (' + result.execution_time + ')</p>';
-                html += '<p><strong>Input:</strong> ' + escapeHtml(result.input) + '</p>';
-                html += '<p><strong>Expected:</strong> ' + escapeHtml(result.expected) + '</p>';
-                html += '<p><strong>Your Output:</strong> ' + escapeHtml(result.output) + '</p>';
-                if (result.error) {
-                    html += '<p><strong>Error:</strong> <span class="error">' + escapeHtml(result.error) + '</span></p>';
+
+        editor = monaco.editor.create(document.getElementById('codeEditorContainer'), {
+            value: starterCode,
+            language: 'python',
+            theme: 'vs-light',
+            minimap: { enabled: false },
+            automaticLayout: true,
+            scrollBeyondLastLine: false,
+            fontSize: 14
+        });
+
+        // Linting logic
+        let lintTimeout;
+        editor.onDidChangeModelContent(() => {
+            clearTimeout(lintTimeout);
+            lintTimeout = setTimeout(async () => {
+                const code = editor.getValue();
+                const response = await fetch('/api/lint', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+                const data = await response.json();
+                if (data.markers) {
+                    monaco.editor.setModelMarkers(editor.getModel(), 'python', data.markers);
+                }
+            }, 500); // Debounce 500ms
+        });
+    });
+
+    document.getElementById('runBtn').addEventListener('click', async () => {
+        if (!editor) return;
+        const code = editor.getValue();
+        const outputSection = document.getElementById('output');
+        const outputContent = document.getElementById('outputContent');
+
+        outputSection.style.display = 'block';
+        outputContent.innerHTML = '<p class="loading">Running code...</p>';
+
+        try {
+            const response = await fetch('/run', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ code }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                let html = '<div class="result-box success">';
+                html += '<p><strong>Execution Time:</strong> ' + data.execution_time + '</p>';
+                if (data.output) {
+                    html += '<p><strong>Output:</strong></p>';
+                    html += '<pre>' + escapeHtml(data.output) + '</pre>';
+                }
+                if (data.error) {
+                    html += '<p><strong>Errors:</strong></p>';
+                    html += '<pre class="error">' + escapeHtml(data.error) + '</pre>';
                 }
                 html += '</div>';
-            });
-            
-            html += '</div>';
-            outputContent.innerHTML = html;
-        } else {
-            outputContent.innerHTML = '<div class="result-box error"><p>' + data.error + '</p></div>';
+                outputContent.innerHTML = html;
+            } else {
+                outputContent.innerHTML = '<div class="result-box error"><p>' + data.error + '</p></div>';
+            }
+        } catch (error) {
+            outputContent.innerHTML = '<div class="result-box error"><p>Error: ' + error.message + '</p></div>';
         }
-    } catch (error) {
-        outputContent.innerHTML = '<div class="result-box error"><p>Error: ' + error.message + '</p></div>';
-    }
-});
+    });
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+        if (!editor) return;
+        const code = editor.getValue();
+        const outputSection = document.getElementById('output');
+        const outputContent = document.getElementById('outputContent');
+
+        outputSection.style.display = 'block';
+        outputContent.innerHTML = '<p class="loading">Running test cases...</p>';
+
+        try {
+            const response = await fetch('/submit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ code, problem_id: problemId }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                let html = '<div class="result-box ' + (data.all_passed ? 'success' : 'error') + '">';
+                html += '<h4>' + (data.all_passed ? '✓ All Tests Passed!' : '✗ Some Tests Failed') + '</h4>';
+
+                data.results.forEach(result => {
+                    html += '<div class="test-case ' + (result.passed ? 'passed' : 'failed') + '">';
+                    html += '<p><strong>Test Case ' + result.test_case + ':</strong> ';
+                    html += result.passed ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>';
+                    html += ' (' + result.execution_time + ')</p>';
+                    html += '<p><strong>Input:</strong> ' + escapeHtml(result.input) + '</p>';
+                    html += '<p><strong>Expected:</strong> ' + escapeHtml(result.expected) + '</p>';
+                    html += '<p><strong>Your Output:</strong> ' + escapeHtml(result.output) + '</p>';
+                    if (result.error) {
+                        html += '<p><strong>Error:</strong> <span class="error">' + escapeHtml(result.error) + '</span></p>';
+                    }
+                    html += '</div>';
+                });
+
+                html += '</div>';
+                outputContent.innerHTML = html;
+            } else {
+                outputContent.innerHTML = '<div class="result-box error"><p>' + data.error + '</p></div>';
+            }
+        } catch (error) {
+            outputContent.innerHTML = '<div class="result-box error"><p>Error: ' + error.message + '</p></div>';
+        }
+    });
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 </script>
 {% endblock %}
