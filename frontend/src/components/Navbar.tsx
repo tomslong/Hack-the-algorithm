@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/sheet";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { ModeToggle } from "@/components/mode-toggle";
 
 export function Navbar() {
   const location = useLocation();
@@ -100,10 +101,8 @@ export function Navbar() {
           </SheetContent>
         </Sheet>
         
-        <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
-          <div className="w-full flex-1 md:w-auto md:flex-none">
-            {/* Search placeholder or other actions */}
-          </div>
+        <div className="flex flex-1 items-center justify-end">
+          <ModeToggle />
         </div>
       </div>
     </header>

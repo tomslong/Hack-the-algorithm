@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import parse from "html-react-parser";
 import DOMPurify from "dompurify";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft } from "lucide-react";
+import { CodeBlock } from "@/components/CodeBlock";
 import type { Content, Topic as TopicType } from "@/types";
 
 export function Topic() {
@@ -73,6 +74,18 @@ export function Topic() {
 
   const sanitizedContent = DOMPurify.sanitize(topic.content);
 
+  const options = {
+    replace: (domNode: any) => {
+      if (domNode.type === 'tag' && domNode.name === 'pre') {
+        const codeNode = domNode.children.find((c: any) => c.type === 'tag' && c.name === 'code');
+        if (codeNode && codeNode.children && codeNode.children.length > 0) {
+            const textContent = codeNode.children.map((c: any) => c.data || '').join('');
+            return <CodeBlock code={textContent} language="python" />;
+        }
+      }
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, x: 20 }}
@@ -96,7 +109,7 @@ export function Topic() {
       </div>
       
       <div className="prose prose-slate max-w-none dark:prose-invert">
-        {parse(sanitizedContent)}
+        {parse(sanitizedContent, options)}
       </div>
     </motion.div>
   );

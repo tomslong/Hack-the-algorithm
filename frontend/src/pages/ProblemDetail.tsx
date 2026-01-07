@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Editor from "@monaco-editor/react";
+import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,12 +21,15 @@ export function ProblemDetail() {
   const { problemId } = useParams<{ problemId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { resolvedTheme } = useTheme();
   const [problem, setProblem] = useState<Problem | null>(null);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<ExecutionResult[] | null>(null);
   const [activeTab, setActiveTab] = useState("description");
+
+  const monacoTheme = resolvedTheme === "dark" ? "vs-dark" : "vs";
 
   useEffect(() => {
     fetch(`/api/problems/${problemId}`)
@@ -259,15 +263,21 @@ export function ProblemDetail() {
           <Editor
             height="100%"
             defaultLanguage="python"
-            theme="vs-dark"
+            theme={monacoTheme}
             value={code}
             onChange={(value) => setCode(value || "")}
+            loading={<div className="flex h-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}
             options={{
               minimap: { enabled: false },
               fontSize: 14,
               lineNumbers: "on",
               scrollBeyondLastLine: false,
               automaticLayout: true,
+              smoothScrolling: true,
+              cursorBlinking: "smooth",
+              cursorSmoothCaretAnimation: "on",
+              formatOnPaste: true,
+              formatOnType: true,
             }}
           />
         </div>
