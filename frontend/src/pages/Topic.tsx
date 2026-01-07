@@ -74,16 +74,26 @@ export function Topic() {
 
   const sanitizedContent = DOMPurify.sanitize(topic.content);
 
+  type HtmlNode = {
+    type?: string;
+    name?: string;
+    children?: HtmlNode[];
+    data?: string;
+  };
+
   const options = {
-    replace: (domNode: any) => {
-      if (domNode.type === 'tag' && domNode.name === 'pre') {
-        const codeNode = domNode.children.find((c: any) => c.type === 'tag' && c.name === 'code');
-        if (codeNode && codeNode.children && codeNode.children.length > 0) {
-            const textContent = codeNode.children.map((c: any) => c.data || '').join('');
-            return <CodeBlock code={textContent} language="python" />;
-        }
-      }
-    }
+    replace: (domNode: unknown) => {
+      const node = domNode as HtmlNode;
+
+      if (node.type !== "tag" || node.name !== "pre") return;
+
+      const codeNode = node.children?.find((c) => c.type === "tag" && c.name === "code");
+      const textContent = codeNode?.children?.map((c) => c.data ?? "").join("") ?? "";
+
+      if (!textContent) return;
+
+      return <CodeBlock code={textContent} language="python" />;
+    },
   };
 
   return (

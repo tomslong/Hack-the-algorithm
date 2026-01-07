@@ -94,6 +94,7 @@ export function ProblemDetail() {
         }
       }
     } catch (error) {
+      console.error(error);
       toast({
         variant: "destructive",
         title: "Network Error",

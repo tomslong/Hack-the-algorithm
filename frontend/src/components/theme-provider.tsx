@@ -16,50 +16,48 @@ type ThemeProviderState = {
 
 const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undefined)
 
+function resolveTheme(theme: Theme): "light" | "dark" {
+  if (theme === "system") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+  }
+  return theme
+}
+
 export function ThemeProvider({
   children,
   defaultTheme = "system",
   storageKey = "vite-ui-theme",
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
-  )
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light")
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem(storageKey) as Theme) || defaultTheme)
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(() => resolveTheme(theme))
 
   useEffect(() => {
     const root = window.document.documentElement
 
     root.classList.remove("light", "dark")
 
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light"
-      
-      setResolvedTheme(systemTheme)
-      root.classList.add(systemTheme)
-      return
-    }
-
-    setResolvedTheme(theme)
-    root.classList.add(theme)
-  }, [theme])
+    root.classList.add(resolvedTheme)
+  }, [resolvedTheme])
 
   // Listen for system theme changes
   useEffect(() => {
     if (theme === "system") {
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
       const handleChange = () => {
-        const newTheme = mediaQuery.matches ? "dark" : "light"
-        setResolvedTheme(newTheme)
-        const root = window.document.documentElement
-        root.classList.remove("light", "dark")
-        root.classList.add(newTheme)
+        setResolvedTheme(mediaQuery.matches ? "dark" : "light")
       }
-      
-      mediaQuery.addEventListener("change", handleChange)
-      return () => mediaQuery.removeEventListener("change", handleChange)
+
+      if (typeof mediaQuery.addEventListener === "function") {
+        mediaQuery.addEventListener("change", handleChange)
+        return () => mediaQuery.removeEventListener("change", handleChange)
+      }
+
+      if (typeof mediaQuery.addListener === "function") {
+        mediaQuery.addListener(handleChange)
+        return () => mediaQuery.removeListener(handleChange)
+      }
+
+      return
     }
   }, [theme])
 
@@ -68,6 +66,7 @@ export function ThemeProvider({
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme)
       setTheme(theme)
+      setResolvedTheme(resolveTheme(theme))
     },
     resolvedTheme
   }

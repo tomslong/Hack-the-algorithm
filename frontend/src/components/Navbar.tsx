@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Code2, BookOpen, Menu } from "lucide-react";
+import { Code2, BookOpen, Menu, Bot, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -28,6 +28,18 @@ export function Navbar() {
       label: "Practice",
       icon: Code2,
       active: location.pathname.startsWith("/problem"),
+    },
+    {
+      href: "/tutor",
+      label: "AI Tutor",
+      icon: Bot,
+      active: location.pathname.startsWith("/tutor"),
+    },
+    {
+      href: "/settings",
+      label: "Settings",
+      icon: Settings,
+      active: location.pathname.startsWith("/settings"),
     },
   ];
 

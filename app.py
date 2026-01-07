@@ -1,19 +1,22 @@
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
+import logging
 import subprocess
-import json
 import time
 import sys
 import jedi
-from io import StringIO
 from config import Config
-try:
-    from flake8.api import legacy as flake8
-except ImportError:
-    import flake8.api.legacy as flake8
-from config import Config
+from openai import OpenAI
+import database
 
 app = Flask(__name__)
+CORS(app)
 app.config.from_object(Config)
+
+logger = logging.getLogger(__name__)
+
+# Initialize database
+database.init_db()
 
 # Data Structures and Algorithms content
 DSA_CONTENT = {
@@ -729,9 +732,11 @@ print(merge_sorted_arrays([1, 3, 5, 7], [2, 4, 6, 8]))''',
 @app.route('/')
 def home():
     """Home page with overview"""
-    return render_template('home.html', 
-                         data_structures=DSA_CONTENT['data_structures'],
-                         algorithms=DSA_CONTENT['algorithms'])
+    return render_template(
+        'home.html',
+        data_structures=DSA_CONTENT['data_structures'],
+        algorithms=DSA_CONTENT['algorithms'],
+    )
 
 
 @app.route('/learn/<category>/<topic_id>')
@@ -790,10 +795,10 @@ def submit_code():
             try:
                 # Prepare test code
                 test_code = code + f"\n\n# Test case {i+1}\n"
-                test_code += f"import json\n"
+                test_code += "import json\n"
                 test_code += f"args = json.loads('{test_case['input']}')\n"
                 test_code += f"result = {problem['id']}(*args)\n"
-                test_code += f"print(json.dumps(result))"
+                test_code += "print(json.dumps(result))"
                 
                 # Execute with timeout
                 start_time = time.time()
@@ -863,9 +868,7 @@ def lint_code():
     try:
         data = request.get_json()
         code = data.get('code', '')
-        
-        style_guide = flake8.get_style_guide(ignore=['E501'])
-        
+
         # Flake8 API expects a file, so we process the string via a Report helper or temporary approach
         # A simpler way for string content is using check_files if we write to temp, 
         # or hooking into the reporting.
@@ -891,9 +894,9 @@ def lint_code():
                     'startLineNumber': int(row),
                     'startColumn': int(col),
                     'endLineNumber': int(row),
-                    'endColumn': int(col) + 1, # Heuristic
+                    'endColumn': int(col) + 1,  # Heuristic
                     'message': f"{code}: {text}",
-                    'severity': 8 # MarkerSeverity.Error = 8
+                    'severity': 8  # MarkerSeverity.Error = 8
                 })
         
         return jsonify({'markers': markers})
@@ -918,7 +921,7 @@ def complete_code():
         for c in completions:
             suggestions.append({
                 'label': c.name,
-                'kind': 1, # 1: Text, can refine based on c.type
+                'kind': 1,  # 1: Text, can refine based on c.type
                 'insertText': c.name,
                 'detail': c.description
             })
@@ -993,6 +996,198 @@ def get_problem(problem_id):
         return jsonify({'error': 'Problem not found'}), 404
     return jsonify(problem)
 
+
+@app.route('/api/skills', methods=['GET', 'POST'])
+def handle_skills():
+    user_id = 'user'
+    if request.method == 'POST':
+        data = request.get_json()
+        skills = data.get('skills', {})
+        for category, score in skills.items():
+            database.save_user_skill(user_id, category, score)
+        return jsonify({'success': True})
+    else:
+        skills = database.get_user_skills(user_id)
+        return jsonify(skills)
+
+@app.route('/api/keys', methods=['POST', 'GET'])
+def handle_keys():
+    if request.method == 'POST':
+        data = request.get_json()
+        provider = data.get('provider', 'openai')
+        key = data.get('key')
+        if not key:
+            return jsonify({'error': 'Key required'}), 400
+
+        model = data.get('model')
+        name = data.get('name')
+        is_default = bool(data.get('is_default', False))
+        quota_requests_per_day = data.get('quota_requests_per_day')
+        quota_tokens_per_day = data.get('quota_tokens_per_day')
+        rate_limit_rpm = data.get('rate_limit_rpm')
+        rate_limit_tpm = data.get('rate_limit_tpm')
+
+        try:
+            if model is None and name is None and not is_default and quota_requests_per_day is None and quota_tokens_per_day is None and rate_limit_rpm is None and rate_limit_tpm is None:
+                database.save_api_key(provider, key)
+                return jsonify({'success': True})
+
+            key_id = database.add_api_key(
+                provider=provider,
+                model=model or '*',
+                key=key,
+                name=name,
+                is_default=is_default,
+                quota_requests_per_day=quota_requests_per_day,
+                quota_tokens_per_day=quota_tokens_per_day,
+                rate_limit_rpm=rate_limit_rpm,
+                rate_limit_tpm=rate_limit_tpm,
+            )
+            return jsonify({'success': True, 'id': key_id})
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+    else:
+        provider = request.args.get('provider', 'openai')
+        detailed = request.args.get('detailed') == '1'
+        model = request.args.get('model')
+
+        if detailed:
+            keys = database.list_api_keys(provider=provider, model=model)
+            return jsonify({'exists': len(keys) > 0, 'keys': keys})
+
+        key = database.get_api_key(provider)
+        return jsonify({'exists': key is not None})
+
+
+@app.route('/api/keys/<int:key_id>', methods=['DELETE', 'PATCH'])
+def handle_key_item(key_id: int):
+    if request.method == 'DELETE':
+        deleted = database.delete_api_key(key_id)
+        if deleted:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Key not found'}), 404
+
+    data = request.get_json() or {}
+    action = data.get('action')
+    if action == 'set_default':
+        ok = database.set_default_api_key(key_id)
+        if ok:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Key not found'}), 404
+    if action == 'disable':
+        updated = database.disable_api_key(key_id)
+        if updated:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Key not found'}), 404
+
+    return jsonify({'error': 'Invalid action'}), 400
+
+
+@app.route('/api/keys/validate', methods=['POST'])
+def validate_key():
+    data = request.get_json() or {}
+    provider = data.get('provider', 'openai')
+    key = data.get('key', '')
+    return jsonify({'valid_format': database.validate_api_key_format(provider, key)})
+
+
+def _estimate_tokens(text: str) -> int:
+    if not text:
+        return 0
+    return max(1, int(len(text) / 4))
+
+
+def _classify_openai_error(e: Exception):
+    status = getattr(e, 'status_code', None) or getattr(e, 'status', None)
+    name = e.__class__.__name__.lower()
+
+    if status == 401 or 'authentication' in name or 'invalidapi' in name:
+        return 'invalid_key', 401
+    if status == 429 or 'ratelimit' in name:
+        return 'rate_limited', 429
+    if (isinstance(status, int) and status >= 500) or 'serviceunavailable' in name or 'apierror' in name or 'apiconnection' in name:
+        return 'service_outage', 503
+    return 'unknown', 500
+
+@app.route('/api/chat', methods=['POST'])
+def chat_tutor():
+    data = request.get_json()
+    message = data.get('message')
+    mode = data.get('mode', 'tutor')
+    topic = data.get('topic', 'general')
+    provider = data.get('provider', 'openai')
+    model = data.get('model', 'gpt-3.5-turbo')
+    
+    user_id = 'user'
+    skills = database.get_user_skills(user_id)
+    skill_level = skills.get(topic, 3)
+    
+    estimated_tokens = _estimate_tokens(message) + _estimate_tokens(topic)
+    
+    system_prompt = f"You are an expert algorithm tutor. The user's skill level in {topic} is {skill_level}/5."
+    if mode == 'socratic':
+        system_prompt += " Use the Socratic method. Do not give the answer directly. Ask guiding questions."
+    elif mode == 'challenge':
+        system_prompt += " Propose a coding challenge appropriate for their level. Be concise."
+    else:
+        system_prompt += " Explain concepts clearly and provide examples."
+        
+    exclude_key_ids = set()
+    last_error = None
+
+    for _ in range(3):
+        try:
+            selected = database.acquire_api_key(
+                provider=provider,
+                model=model,
+                estimated_tokens=estimated_tokens,
+                exclude_key_ids=exclude_key_ids,
+            )
+        except database.ApiKeyNotConfiguredError:
+            return jsonify({'error': 'API Key not configured', 'code': 'api_key_not_configured'}), 401
+        except database.ApiKeyQuotaExceededError:
+            return jsonify({'error': 'Quota exceeded', 'code': 'quota_exceeded'}), 429
+        except database.ApiKeyRateLimitedError:
+            return jsonify({'error': 'Rate limit exceeded', 'code': 'rate_limited'}), 429
+
+        exclude_key_ids.add(selected['id'])
+        client = OpenAI(api_key=selected['api_key'])
+
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message}
+                ]
+            )
+            reply = response.choices[0].message.content
+            return jsonify({'reply': reply})
+        except Exception as e:
+            code, http_status = _classify_openai_error(e)
+            last_error = (code, http_status, str(e))
+            logger.exception("LLM request failed", extra={"code": code, "provider": provider, "model": model, "key_id": selected['id']})
+
+            if code == 'invalid_key':
+                database.disable_api_key(selected['id'])
+                continue
+            if code == 'rate_limited':
+                continue
+            if code == 'service_outage':
+                continue
+            break
+
+    if last_error:
+        code, http_status, msg = last_error
+        if code == 'invalid_key':
+            return jsonify({'error': 'Invalid API key', 'code': 'invalid_key'}), 401
+        if code == 'rate_limited':
+            return jsonify({'error': 'Rate limit exceeded', 'code': 'rate_limited'}), 429
+        if code == 'service_outage':
+            return jsonify({'error': 'Service outage', 'code': 'service_outage'}), 503
+        return jsonify({'error': msg, 'code': 'llm_error'}), 500
+
+    return jsonify({'error': 'Failed to get response', 'code': 'llm_error'}), 500
 
 if __name__ == '__main__':
     app.run(host=app.config['HOST'], port=app.config['PORT'], debug=app.config['DEBUG'])
