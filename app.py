@@ -973,5 +973,26 @@ def run_code():
         }), 500
 
 
+@app.route('/api/content')
+def get_content():
+    """Get all learning content structure"""
+    return jsonify(DSA_CONTENT)
+
+
+@app.route('/api/problems', methods=['GET'])
+def get_problems():
+    """Get all problems list"""
+    return jsonify(PROBLEMS)
+
+
+@app.route('/api/problems/<problem_id>')
+def get_problem(problem_id):
+    """Get specific problem details"""
+    problem = next((p for p in PROBLEMS if p['id'] == problem_id), None)
+    if not problem:
+        return jsonify({'error': 'Problem not found'}), 404
+    return jsonify(problem)
+
+
 if __name__ == '__main__':
     app.run(host=app.config['HOST'], port=app.config['PORT'], debug=app.config['DEBUG'])
